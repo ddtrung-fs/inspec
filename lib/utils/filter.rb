@@ -223,6 +223,7 @@ module FilterTable
       # the struct to hold single items from the #entries method
       entry_struct = Struct.new(*struct_fields.map(&:to_sym)) do
         attr_accessor :__filter
+        attr_accessor :__filter_table
         def to_s
           @__filter || super
         end
@@ -242,9 +243,35 @@ module FilterTable
           return entry_struct.new if hashmap.nil?
           res = entry_struct.new(*struct_fields.map { |x| hashmap[x] })
           res.__filter = filter
+          res.__filter_table = self
           res
         end
       }
+
+      # Now that the table class is defined and the row struct is defined, 
+      # extend the row struct to support triggering population of lazy fields
+      # in where blocks. To do that, we'll need a reference to the table (which
+      # knows which fields are populated, and how to populated them) and we'll need to 
+      # override the getter method for each lazy field, so it will trigger 
+      # population if needed.  Keep in mind we don't have to adjust the constructor
+      # args of the row struct; also the Struct class will already have provided 
+      # a setter for each field.
+      connectors.values.each do |connector_info|
+        next unless connector_info.opts[:lazy]
+        field_name = connector_info.field_name.to_sym
+        entry_struct.send(:define_method, field_name) do
+          unless __filter_table.field_populated?(field_name)
+            __filter_table.populate_lazy_field(field_name,Show) # No access to criteria here
+            # OK, the underlying raw data has the value in the first row 
+            # (because we would trigger population only on the first row)
+            # We could just return the value, but we need to set it on this Struct in case it is referenced multiple times
+            # in the where block.
+            self[field_name] = __filter_table.params[0][field_name]
+          end
+          # Now return the value using the Struct getter, whether newly populated or not
+          self[field_name]
+        end
+      end
 
       # Define all access methods with the parent resource
       # These methods will be configured to return an `ExceptionCatcher` object
