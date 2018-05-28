@@ -139,9 +139,10 @@ module FilterTable
     alias inspect to_s
 
     def populate_lazy_field(field_name, criterion)
-      return unless is_field_lazy?(field_name)      
+      return unless is_field_lazy?(field_name)
       return if field_populated?(field_name)
       @params.each do |row|
+        next if row.key?(field_name) # skip row if pre-existing data is present
         row[field_name] = callback_for_lazy_field(field_name).call(row, criterion, self)
       end
       @populated_lazy_columns[field_name] = true
@@ -150,13 +151,13 @@ module FilterTable
     def is_field_lazy?(sought_field_name)
       connector_schema.values.any? do |connector_struct|
         sought_field_name == connector_struct.field_name && \
-        connector_struct.opts[:lazy]
-     end
+          connector_struct.opts[:lazy]
+      end
     end
 
     def callback_for_lazy_field(field_name)
       return unless is_field_lazy?(field_name)
-      connector_schema.values.find do |connector_struct| 
+      connector_schema.values.find do |connector_struct|
         connector_struct.field_name == field_name
       end.opts[:lazy]
     end
@@ -212,7 +213,7 @@ module FilterTable
       @resource = nil
     end
 
-    def connect(resource, table_accessor) # rubocop:disable Metrics/AbcSize
+    def connect(resource, table_accessor) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       # create the table structure
       connectors = @connectors
       struct_fields = connectors.values.map(&:field_name)
@@ -248,21 +249,21 @@ module FilterTable
         end
       }
 
-      # Now that the table class is defined and the row struct is defined, 
+      # Now that the table class is defined and the row struct is defined,
       # extend the row struct to support triggering population of lazy fields
       # in where blocks. To do that, we'll need a reference to the table (which
-      # knows which fields are populated, and how to populated them) and we'll need to 
-      # override the getter method for each lazy field, so it will trigger 
+      # knows which fields are populated, and how to populated them) and we'll need to
+      # override the getter method for each lazy field, so it will trigger
       # population if needed.  Keep in mind we don't have to adjust the constructor
-      # args of the row struct; also the Struct class will already have provided 
+      # args of the row struct; also the Struct class will already have provided
       # a setter for each field.
       connectors.values.each do |connector_info|
         next unless connector_info.opts[:lazy]
         field_name = connector_info.field_name.to_sym
         entry_struct.send(:define_method, field_name) do
           unless __filter_table.field_populated?(field_name)
-            __filter_table.populate_lazy_field(field_name,Show) # No access to criteria here
-            # OK, the underlying raw data has the value in the first row 
+            __filter_table.populate_lazy_field(field_name, Show) # No access to criteria here
+            # OK, the underlying raw data has the value in the first row
             # (because we would trigger population only on the first row)
             # We could just return the value, but we need to set it on this Struct in case it is referenced multiple times
             # in the where block.
