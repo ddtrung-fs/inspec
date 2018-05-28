@@ -88,6 +88,7 @@ module FilterTable
       @params = params
       @params = [] if @params.nil?
       @filters = filters
+      @populated_lazy_columns = {}
     end
 
     def where(conditions = {}, &block)
@@ -97,6 +98,7 @@ module FilterTable
       filters = ''
       table = @params
       conditions.each do |field, condition|
+        populate_lazy_field(field, condition) if is_field_lazy?(field)
         filters += " #{field} == #{condition.inspect}"
         table = filter_lines(table, field, condition)
       end
@@ -135,6 +137,33 @@ module FilterTable
     end
 
     alias inspect to_s
+
+    def populate_lazy_field(field_name, criterion)
+      return unless is_field_lazy?(field_name)      
+      return if field_populated?(field_name)
+      @params.each do |row|
+        row[field_name] = callback_for_lazy_field(field_name).call(row, criterion, self)
+      end
+      @populated_lazy_columns[field_name] = true
+    end
+
+    def is_field_lazy?(sought_field_name)
+      connector_schema.values.any? do |connector_struct|
+        sought_field_name == connector_struct.field_name && \
+        connector_struct.opts[:lazy]
+     end
+    end
+
+    def callback_for_lazy_field(field_name)
+      return unless is_field_lazy?(field_name)
+      connector_schema.values.find do |connector_struct| 
+        connector_struct.field_name == field_name
+      end.opts[:lazy]
+    end
+
+    def field_populated?(field_name)
+      @populated_lazy_columns[field_name]
+    end
 
     private
 
@@ -205,6 +234,10 @@ module FilterTable
           define_method x[0], &x[1]
         end
 
+        define_method :connector_schema do
+          connectors
+        end
+
         define_method :new_entry do |hashmap, filter = ''|
           return entry_struct.new if hashmap.nil?
           res = entry_struct.new(*struct_fields.map { |x| hashmap[x] })
@@ -257,7 +290,11 @@ module FilterTable
 
       lambda { |condition = Show, &cond_block|
         if condition == Show && !block_given?
-          r = where(nil).get_field(c.field_name)
+          r = where(nil)
+          if c.opts[:lazy]
+            r.populate_lazy_field(c.field_name, condition)
+          end
+          r = r.get_field(c.field_name)
           r = r.flatten.uniq.compact if c.opts[:style] == :simple
           r
         else
