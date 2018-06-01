@@ -191,13 +191,12 @@ module FilterTable
     def connect(resource, table_accessor) # rubocop:disable Metrics/AbcSize
       # create the table structure
       connectors = @connectors
-      struct_fields = connectors.values.map(&:field_name)
       connector_blocks = connectors.map do |method, c|
         [method.to_sym, create_connector(c)]
       end
 
       # the struct to hold single items from the #entries method
-      non_block_struct_fields = connectors.values.select { |connector_info| !connector_info.block}.map(&:field_name)
+      non_block_struct_fields = connectors.values.reject(&:block).map(&:field_name)
       entry_struct = Struct.new(*non_block_struct_fields.map(&:to_sym)) do
         attr_accessor :__filter
         def to_s
