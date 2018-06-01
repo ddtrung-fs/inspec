@@ -90,6 +90,8 @@ module FilterTable
       @filters = filters
     end
 
+    alias raw_data params
+
     def where(conditions = {}, &block)
       return self if !conditions.is_a?(Hash)
       return self if conditions.empty? && !block_given?
@@ -178,8 +180,11 @@ module FilterTable
     Connector = Struct.new(:field_name, :block, :opts)
 
     def initialize
-      @accessors = []
+      @accessors = [:where, :entries, :raw_data]
       @connectors = {}
+      add(:exist?) { |table| !table.raw_data.empty? }
+      add(:count)  { |table|  table.raw_data.count }
+
       @resource = nil
     end
 
@@ -236,7 +241,11 @@ module FilterTable
       if method_name.nil?
         throw RuntimeError, "Called filter.add_delegator for resource #{@resource} with method name nil!"
       end
-      @accessors.push(method_name)
+      if @accessors.include? method_name
+        # TODO: issue deprecation warning?
+      else
+        @accessors.push(method_name)
+      end
       self
     end
 
@@ -244,9 +253,12 @@ module FilterTable
       if method_name.nil?
         throw RuntimeError, "Called filter.add for resource #{@resource} with method name nil!"
       end
-
-      @connectors[method_name.to_sym] =
-        Connector.new(opts[:field] || method_name, block, opts)
+      if @connectors.key?(method_name.to_sym)
+        # TODO: issue deprecation warning?
+      else
+        @connectors[method_name.to_sym] =
+          Connector.new(opts[:field] || method_name, block, opts)
+      end
       self
     end
 
