@@ -197,12 +197,13 @@ module FilterTable
       end
 
       # the struct to hold single items from the #entries method
-      entry_struct = Struct.new(*struct_fields.map(&:to_sym)) do
+      non_block_struct_fields = connectors.values.select { |connector_info| !connector_info.block}.map(&:field_name)
+      entry_struct = Struct.new(*non_block_struct_fields.map(&:to_sym)) do
         attr_accessor :__filter
         def to_s
           @__filter || super
         end
-      end unless struct_fields.empty?
+      end unless non_block_struct_fields.empty?
 
       # the main filter table
       table = Class.new(Table) {
@@ -212,7 +213,7 @@ module FilterTable
 
         define_method :new_entry do |hashmap, filter = ''|
           return entry_struct.new if hashmap.nil?
-          res = entry_struct.new(*struct_fields.map { |x| hashmap[x] })
+          res = entry_struct.new(*non_block_struct_fields.map { |x| hashmap[x] })
           res.__filter = filter
           res
         end
